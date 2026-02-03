@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Coursera AutoComplete Extension",
+  "version": "1.0",
+  "author": "s1xine",
+  "version_name": "Alpha",
+  "description": "This extension auto completes the coursera course quizes, videos, reading materials and discussions.",
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "icons": {
+    "16": "dist/assets/icon16.png",
+    "32": "dist/assets/icon32.png",
+    "48": "dist/assets/icon48.png",
+    "128": "dist/assets/icon128.png"
+  },
+  "background": {
+    "service_worker": "dist/scripts/background.js"
+  },
+  "action": {
+    "default_popup": "dist/popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.coursera.org/*"],
+      "js": ["dist/scripts/content.js"],
+      "css": ["dist/css/popup.css"]
+    }
+  ],
+  "host_permissions": ["*://*.coursera.org/*"]
+}
