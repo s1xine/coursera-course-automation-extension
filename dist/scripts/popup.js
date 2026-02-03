@@ -28,8 +28,6 @@ async function loadDynamicCounts() {
 
         const data = response.data;
 
-        console.log("Popup material data:", data);
-
         updateCheckboxLabel("lecture", "Videos", data.lecture?.length || 0);
         updateCheckboxLabel(
           "supplement",
@@ -48,6 +46,16 @@ async function loadDynamicCounts() {
         );
         updateCheckboxLabel("quiz", "Quizzes", data.quiz?.length || 0);
         updateCheckboxLabel("exam", "Exams", data.exam?.length || 0);
+        updateCheckboxLabel(
+          "ungradedWidget",
+          "Ungraded Plugin",
+          data.ungradedWidget?.length || 0,
+        );
+        updateCheckboxLabel(
+          "ungradedLab",
+          "Lab",
+          data.ungradedLab?.length || 0,
+        );
       },
     );
   } catch (err) {
@@ -79,6 +87,8 @@ document.getElementById("runBtn").addEventListener("click", async () => {
     staffGraded: document.getElementById("staffGraded").checked,
     quiz: document.getElementById("quiz").checked,
     exam: document.getElementById("exam").checked,
+    ungradedWidget: document.getElementById("ungradedWidget").checked,
+    ungradedLab: document.getElementById("ungradedLab").checked,
   };
 
   const [tab] = await chrome.tabs.query({

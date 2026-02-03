@@ -20,17 +20,19 @@ function createToastContainer() {
   container.id = "coursera-toast-container";
 
   container.style.cssText = `
+    all: initial;
     position: fixed;
     bottom: 20px;
     right: 20px;
-    z-index: 999999;
+    z-index: 2147483647;
     display: flex;
     flex-direction: column;
     gap: 10px;
     pointer-events: none;
   `;
 
-  document.body.appendChild(container);
+  // IMPORTANT: append to <html> NOT <body>
+  document.documentElement.appendChild(container);
 }
 
 function showToast(message, type = "info") {
@@ -38,14 +40,15 @@ function showToast(message, type = "info") {
 
   const toast = document.createElement("div");
 
-  let bgColor = "#333";
-
-  if (type === "success") bgColor = "#2ecc71";
-  if (type === "error") bgColor = "#e74c3c";
-  if (type === "info") bgColor = "#3498db";
+  const colors = {
+    success: "#2ecc71",
+    error: "#e74c3c",
+    info: "#3498db",
+  };
 
   toast.style.cssText = `
-    background: ${bgColor};
+    all: initial;
+    background: ${colors[type] || "#333"};
     color: white;
     padding: 12px 16px;
     border-radius: 8px;
@@ -53,8 +56,8 @@ function showToast(message, type = "info") {
     font-family: system-ui, sans-serif;
     box-shadow: 0 4px 10px rgba(0,0,0,0.2);
     opacity: 0;
-    transform: translateX(50px);
-    transition: all 0.3s ease;
+    transform: translateX(40px);
+    transition: all 0.25s ease;
     pointer-events: auto;
     max-width: 300px;
   `;
@@ -70,15 +73,13 @@ function showToast(message, type = "info") {
     toast.style.transform = "translateX(0)";
   });
 
-  // Remove after 3s
+  // Auto remove
   setTimeout(() => {
     toast.style.opacity = "0";
-    toast.style.transform = "translateX(50px)";
+    toast.style.transform = "translateX(40px)";
 
-    setTimeout(() => {
-      toast.remove();
-    }, 300);
-  }, 3000);
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
 }
 
 async function fetchCourseMaterials() {
@@ -107,6 +108,8 @@ function extractMaterialTypes(apiData) {
     staffGraded: [],
     quiz: [],
     exam: [],
+    ungradedWidget: [],
+    ungradedLab: [],
     unknown: [],
   };
 
@@ -189,6 +192,56 @@ async function markSupplementComplete(userId, courseId, itemId) {
   return response.json();
 }
 
+async function getWidgetSessionId(userId, courseId, itemId) {
+  const progressId = `${userId}~${courseId}~${itemId}`;
+
+  const res = await fetch(
+    `https://www.coursera.org/api/onDemandWidgetSessions.v1/${progressId}?fields=sessionId`,
+    {
+      credentials: "include",
+    },
+  );
+
+  if (!res.ok) return null;
+
+  const data = await res.json();
+
+  return data?.elements?.[0]?.sessionId || null;
+}
+
+async function markUngradedWidgetComplete(userId, courseId, itemId) {
+  const progressId = `${userId}~${courseId}~${itemId}`;
+
+  const sessionId = await getWidgetSessionId(userId, courseId, itemId);
+
+  if (!sessionId) {
+    throw new Error("Widget session missing");
+  }
+
+  const response = await fetch(
+    `https://www.coursera.org/api/onDemandWidgetProgress.v1/${progressId}`,
+    {
+      method: "PUT",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sessionId: sessionId,
+        progressState: "Completed",
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const err = await response.text();
+    console.error("Widget Progress Error:", err);
+    throw new Error(`Widget failed: ${itemId}`);
+  }
+
+  return true;
+}
+
 async function sendVideoEvent(userId, courseSlug, itemId, event = "play") {
   const url =
     `https://www.coursera.org/api/opencourse.v1/user/${userId}` +
@@ -263,21 +316,24 @@ async function runAutomation(options) {
 
   if (!courseId) {
     console.error("Course ID missing");
-    showToast("Course ID missing", "error");
+    showToast("Not a valid course", "error");
     return;
   }
 
-  if (options.supplement) {
+  if (options.supplement && parsed.supplement.length > 0) {
     showToast("📘 Starting readings automation...", "info");
 
+    let completed = 0;
     for (const item of parsed.supplement) {
       try {
-        // showToast(`⏳ Completing: ${item.name}`, "info");
         await markSupplementComplete(userId, courseId, item.id);
-        // showToast(`✅ Completed: ${item.name}`, "success");
-        // await delay(2000);
+        completed++;
+        showToast(
+          `✅ Completed ${completed}/${parsed.supplement.length}`,
+          "info",
+        );
+        await delay(200);
       } catch (err) {
-        console.error("Failed:", item.slug, err.message);
         showToast(`❌ Failed: ${item.name}`, "error");
       }
     }
@@ -285,34 +341,46 @@ async function runAutomation(options) {
     showToast("🎉 All readings completed!", "success");
   }
 
-  if (options.lecture) {
+  if (options.lecture && parsed.lecture.length > 0) {
     showToast("🎥 Starting lecture automation...", "info");
 
     const courseSlug = location.pathname.split("/")[2];
-
-    console.log(parsed.lecture);
 
     let completed = 0;
     for (const video of parsed.lecture) {
       try {
         const duration = video.time;
-        // showToast(`▶ Playing: ${video.name}`, "info");
         await sendVideoEvent(userId, courseSlug, video.id, "play");
         await updateVideoProgress(userId, courseId, video.id, duration);
         await sendVideoEvent(userId, courseSlug, video.id, "ended");
         completed++;
-        showToast(
-          `✅ Completed ${completed}/${parsed.lecture.length}`,
-          "success",
-        );
+        showToast(`✅ Completed ${completed}/${parsed.lecture.length}`, "info");
         await delay(500);
       } catch (err) {
-        console.error("Video error:", video.slug, err.message);
         showToast(`❌ Failed: ${video.name}`, "error");
       }
     }
 
     showToast("🎉 All lecture videos completed!", "success");
+  }
+
+  if (options.ungradedWidget && parsed.ungradedWidget.length > 0) {
+    showToast("📦 Starting Ungraded Plugin automation...", "info");
+    let completed = 0;
+    for (const item of parsed.ungradedWidget) {
+      try {
+        await markUngradedWidgetComplete(userId, courseId, item.id);
+        completed++;
+        showToast(
+          `✅ Completed ${completed}/${parsed.ungradedWidget.length}`,
+          "info",
+        );
+        await delay(200);
+      } catch (err) {
+        console.log(err);
+        showToast(`❌ Failed: ${item.name}`, "error");
+      }
+    }
   }
 
   automationRunning = false;
